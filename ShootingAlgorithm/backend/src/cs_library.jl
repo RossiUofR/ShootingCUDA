@@ -1,9 +1,11 @@
 using LinearAlgebra
 using CUDA
 
+
 ######################
 # GRIDS AND QUADRATURE
 ######################
+
 
 function get_log_agrid(Na::Int, ϕ::Float64, amax::Float64;
                        ϵ_shift::Float64 = 1e-6)
@@ -62,9 +64,11 @@ function make_quadrature(Nε::Int)
     return εnodes, wε
 end
 
+
 ###########################
 # CPU VERSION / TO_CPU HELP
 ###########################
+
 
 struct ConsSavCPUEGM
     β  :: Float64
@@ -92,7 +96,7 @@ struct ConsSavCPUEGM
 
     # distributions and transitions
     μ      :: Matrix{Float64}   # stationary distribution on (a,y)
-    μp     :: Matrix{Float64}   # last-iteration buffer (optional but convenient)
+    μp     :: Matrix{Float64}   # last-iteration buffer
     Py     :: Matrix{Float64}   # income transition matrix
 end
 
@@ -115,9 +119,11 @@ function to_cpu(cs::ConsSavEGMCUDA)
     )
 end
 
+
 ################################
 # NEAREST-NEIGHBOR HELPERS
 ################################
+
 
 @inline function get_jyp(ypv::Float64, ygrid, Ny::Int)
     jyp_best = 1
@@ -148,9 +154,11 @@ end
     return jap_best
 end
 
+
 ##########################
 # INTERPOLATION
 ##########################
+
 
 @inline function interp_y_from_nearest(gc, jap::Int, ypv::Float64, ygrid, Ny::Int)
     jyp = get_jyp(ypv, ygrid, Ny)
@@ -252,9 +260,11 @@ end
     end
 end
 
+
 ########################
 # BUILD Py ON THE GPU
 ########################
+
 
 @inline function zero_row!(Py, jy::Int, Ny::Int)
     @inbounds for jyp in 1:Ny
@@ -342,27 +352,10 @@ function build_Py!(cs::ConsSavEGMCUDA)
     return cs
 end
 
+
 #########################
 # MONTE CARLO UTILITIES
 #########################
-
-# assumes curandState_t and curand_init, curand_normal are available from CUDA.CURAND
-
-function init_curand!(states::CuVector{curandState_t},
-                      seed::UInt64, nthreads::Int)
-    @cuda threads=min(1024, nthreads) blocks=cld(nthreads, 1024) curand_init_kernel(
-        states, seed, nthreads
-    )
-    return nothing
-end
-
-
-function curand_init_kernel(states, seed, nthreads)
-    i = (blockIdx().x-1)*blockDim().x + threadIdx().x
-    if i <= length(states)
-        curand_init(seed, i, 0, states[i])
-    end
-end
 
 
 function normalize_μp!(cs::ConsSavEGMCUDA)
@@ -382,25 +375,10 @@ function dist_μ(μ_new::AbstractArray{<:Real},
 end
 
 
-function init_mc_state!(cs::ConsSavEGMCUDA;
-                        n_agents::Int)
-    Na, Ny = cs.Na, cs.Ny
-
-    if all(Array(cs.μ) .== 0.0)
-        CUDA.fill!(cs.μ, 1.0 / (Na * Ny))
-    end
-
-    if length(cs.rng_states) < n_agents
-        cs.rng_states = CuVector{curandState_t}(undef, n_agents)
-        init_curand!(cs.rng_states, 123456789, n_agents)
-    end
-
-    return nothing
-end
-
 ##########################################
-######## TIME ITERATIONS 
+# TIME ITERATIONS (used by shooting code)
 ##########################################
+
 
 """
     init_time_policies!(cs, T)
@@ -410,17 +388,13 @@ store them in cs.ga_path, cs.gc_path.
 
 Uses indices t = 0..T mapped to 1..T+1 in the vectors.
 """
-
-
-
-
-
 function init_time_policies!(cs::ConsSavEGMCUDA, T::Int)
     Na, Ny = cs.Na, cs.Ny
     cs.ga_path = [CUDA.zeros(Float64, Na, Ny) for _ in 0:T]
     cs.gc_path = [CUDA.zeros(Float64, Na, Ny) for _ in 0:T]
     return nothing
 end
+
 
 """
     build_Y_path(T; ρ = 0.9, ν = 0.01)
@@ -438,7 +412,7 @@ function build_Y_path(T::Int; ρ::Float64 = 0.9, ν::Float64 = 0.01)
     if T >= 1
         Y[2] = 1.0 + ν     # t = 1
     end
-    for t in 2:T           # for t >= 2, build Y_{t+1}
+    for t in 2:T           # for t ≥ 2, build Y_{t+1}
         Y[t+1] = (1.0 - ρ) + ρ * Y[t]
     end
     return Y
